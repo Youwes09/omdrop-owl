@@ -30,8 +30,9 @@ sudo apt install ./omdrop-owl_*.deb
 This builds OWL at the commit pinned in `pins`, with `patches/`,
 and installs it root-owned into `/usr/lib/omdrop` together with
 `omdrop-discoverable` and omdrop-awdl's portable tools, a polkit policy for the
-helper, and a NetworkManager rule keeping `awdl0`, `mon0` and `awdlibss0`
-unmanaged. It conflicts with `brcmfmac-awdl-dkms`: one radio backend at a time.
+helper, and a NetworkManager rule keeping `awdl0`, `mon0`, `awdlibss0` and `awdlap0`
+unmanaged. `hostapd` is recommended: exclusive mode needs it on cards without
+ad-hoc mode. It conflicts with `brcmfmac-awdl-dkms`: one radio backend at a time.
 
 </details>
 
@@ -72,6 +73,7 @@ and turn it on from the bar.
 | Intel AX211 | `iwlwifi` | ✅ Exclusive | • ThinkPad X1, `8086:51f1`, Ubuntu 26.04 (kernel 7.0)<br>• XPS 9320, `8086:51f0`, Arch (kernel 7.2.3)<br>• Legion Pro 7 16IRX8H, `8086:7a70`, Omarchy 4.0.4 (kernel 7.2.3) |
 | Intel BE (Panther Lake) | `iwlwifi` | ✅ Exclusive | XPS 16, `8086:e440`, Arch (kernel 7.2) |
 | Realtek RTL8822BE | `rtw88_8822be` | ✅ Exclusive; shared untested | Crosshair VII Hero, `10ec:b822`, NixOS 26.11 (kernel 7.2.9) |
+| Realtek RTL8852BU (USB) | `rtw89_8852bu` | ✅ Exclusive (opt-in), as a [second card](#a-second-card) | USB adapter, `35bc:0108`, NixOS 26.05 (kernel 7.2.9) |
 | MediaTek MT7921 | `mt7921e` | ❌ Exclusive ([#14](https://github.com/t4t5/omdrop-owl/issues/14)); shared untested | `14c3:7961`, CachyOS (kernel 7.2.9) |
 | Intel AX210 | `iwlwifi` | ❓ Exclusive untested | — |
 | Intel BE200 | `iwlwifi` | ❓ Exclusive untested | — |
@@ -117,6 +119,20 @@ around it varies, which is what the profile records.
 Cards that can't inject while connected can try `mode exclusive`, which takes
 Wi-Fi away for the window.
 
+### A second card
+
+A USB Wi-Fi adapter can run AirDrop in exclusive mode while the built-in card
+stays connected:
+
+```sh
+echo <adapter> | sudo tee /etc/omdrop/infra-iface
+nmcli device disconnect <adapter>
+```
+
+Exclusive mode tries channels 44, 149 and 6 in that order. If your phone
+doesn't come to the first one, set the order in `/etc/omdrop/channels`, e.g.
+`149 6`.
+
 ## How it works
 
 AWDL (the Wi-Fi link AirDrop runs over) is provided by [jedbillyb's OWL fork](https://github.com/jedbillyb/owl).
@@ -140,6 +156,8 @@ while the machine is visible and restores it on `stop`.
   need the Wi-Fi interface itself repurposed for this.
 - The cell uses HT20 on channel 6 because the tested Intel cards reject
   5 GHz IBSS. Beacons every 10 seconds fix discovery after an iPhone restart.
+- Cards without ad-hoc mode use a hidden AP (hostapd) with the station's MAC
+  instead.
 - OWL injects through a monitor interface, advertises our channel in all
   16 slots (`-S pin`), and elects its sync master by metric (`-E`). Unicast
   frames are sent once to avoid retries stalling the queue.
