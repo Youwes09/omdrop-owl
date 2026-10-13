@@ -10,9 +10,10 @@ FUNCTIONS = SOURCE[SOURCE.index('exclusive_up()'):SOURCE.index('# --------------
 STATION = SOURCE[SOURCE.index('station_iface()'):SOURCE.index('\ndriver_of()')]
 
 class ExclusiveTests(unittest.TestCase):
-    def run_case(self, extra='', fallback=True, join=True):
+    def run_case(self, extra='', fallback=True, join=True, ibss=True, hostapd=True):
         with tempfile.TemporaryDirectory() as tmp:
-            env = dict(os.environ, RUN=tmp, FALLBACK=str(int(fallback)), JOIN=str(int(join)))
+            env = dict(os.environ, RUN=tmp, FALLBACK=str(int(fallback)), JOIN=str(int(join)),
+                       HAS_IBSS=str(int(ibss)), HAS_HOSTAPD=str(int(hostapd)))
             # Whoever runs the tests through sudo must not make them call the real runuser.
             env.pop('SUDO_UID', None)
             env.pop('PKEXEC_UID', None)
@@ -20,6 +21,7 @@ class ExclusiveTests(unittest.TestCase):
 set -uo pipefail
 IBSS=awdlibss0
 MON=mon0
+AP=awdlap0
 AWDL_BSSID=00:25:00:ff:94:73
 RECONNECT_WAIT=3
 log() { echo "log $*" >> "$RUN/commands"; }
@@ -43,7 +45,17 @@ iw() {
   if [[ "$*" == 'phy phy0 interface add awdlibss0 type ibss' ]]; then return "$FALLBACK"; fi
   if [[ "$*" == *'ibss join'* && "$JOIN" == 0 ]]; then return 1; fi
   if [[ "$*" == *' link' ]]; then echo 'Joined IBSS 00:25:00:ff:94:73'; fi
+  if [[ "$*" == 'phy phy0 info' ]]; then
+    printf '\tSupported interface modes:\n\t\t * managed\n'
+    [[ "$HAS_IBSS" == 0 ]] || printf '\t\t * IBSS\n'
+    printf '\t\t * AP\n\t\t * monitor\n\tSupported RX frame types:\n\t\t * IBSS: 0x40 0xb0 0xc0 0xd0\n'
+  fi
+  if [[ "$*" == 'dev awdlap0 info' ]]; then echo '	channel 149 (5745 MHz), width: 20 MHz'; fi
 }
+kill() { echo "kill $*" >> "$RUN/commands"; }
+if [[ "$HAS_HOSTAPD" == 1 ]]; then
+  hostapd() { echo "hostapd $*" >> "$RUN/commands"; echo 4242 > "$RUN/hostapd.pid"; }
+fi
 ''' + FUNCTIONS + STATION + '\n' + extra + '\ntouch "$RUN/commands"; cat "$RUN/commands"\n'
             result = subprocess.run(['bash', '-c', script], env=env, capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -242,6 +254,36 @@ PKEXEC_UID=1000
                             + 'RUNUSER_RC=0\nexclusive_down || exit 11', fallback=False)
         self.assertNotIn('runuser', out)
         self.assertIn('nmcli -w 10 connection up uuid', out)
+
+    def test_card_without_ibss_stands_in_a_hidden_ap(self):
+        out = self.run_case('''f=$(exclusive_up wlan0 phy0 5745) || exit 10
+[[ "$f" == 5745 ]] || exit 11
+grep -qx ignore_broadcast_ssid=1 "$RUN/hostapd.conf" || exit 12
+grep -qx channel=149 "$RUN/hostapd.conf" || exit 13
+grep -qx ieee80211n=1 "$RUN/hostapd.conf" || exit 14
+[[ $(stat -c %a "$RUN/hostapd.conf") == 600 ]] || exit 15
+exclusive_down
+[[ ! -e "$RUN/hostapd.pid" && ! -e "$RUN/hostapd.conf" ]] || exit 16
+''', ibss=False)
+        self.assertIn('iw phy phy0 interface add awdlap0 type __ap', out)
+        self.assertIn('ip link set awdlap0 address 02:00:00:00:00:01', out)
+        self.assertIn('nmcli device set awdlap0 managed no', out)
+        self.assertIn('hostapd -B', out)
+        self.assertIn('kill 4242', out)
+        self.assertIn('iw dev awdlap0 del', out)
+        self.assertNotIn('type ibss', out)
+        self.assertIn('nmcli device set wlan0 managed yes', out)
+
+    def test_card_without_ibss_or_hostapd_fails_and_gives_wifi_back(self):
+        out = self.run_case('exclusive_up wlan0 phy0 5745 && exit 10\nexclusive_down',
+                            ibss=False, hostapd=False)
+        self.assertIn('no hostapd to stand in', out)
+        self.assertNotIn('type __ap', out)
+        self.assertIn('nmcli device set wlan0 managed yes', out)
+
+    def test_ibss_in_frame_type_tables_is_not_ad_hoc_mode(self):
+        self.run_case('has_ibss phy0 && exit 10 || true', ibss=False)
+        self.run_case('has_ibss phy0 || exit 10')
 
 if __name__ == '__main__':
     unittest.main()
