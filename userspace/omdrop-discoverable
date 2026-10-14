@@ -221,8 +221,7 @@ ap_cell() {  # STA PHY FREQ...
       printf '%s\n' "interface=$AP" driver=nl80211 \
         "ssid=omdrop-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')" ignore_broadcast_ssid=1 \
         "hw_mode=$mode" "channel=$ch" ieee80211n=1 beacon_int=10000 \
-        wpa=2 wpa_key_mgmt=WPA-PSK rsn_pairwise=CCMP \
-        "wpa_passphrase=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')" > "$conf" )
+        macaddr_acl=1 accept_mac_file=/dev/null > "$conf" )
     # 9>&-: the daemon must not keep the start lock.
     hostapd -B -P "$RUN/hostapd.pid" "$conf" >> "$RUN/hostapd.log" 2>&1 9>&- || continue
     for _ in $(seq 100); do
