@@ -59,12 +59,9 @@ imports = [ inputs.omdrop-owl.nixosModules.default ];
 services.omdrop-owl.enable = true;
 ```
 
-The module installs the helper and its polkit policy, keeps NetworkManager off
-OWL's interfaces and udev from changing `awdl0`'s MAC address, opens TCP 8771
-on `awdl0`, and stops NixOS restarting wpa_supplicant (dropping Wi-Fi) whenever
-OWL adds or removes an interface. `interface` and `allowUntested` set
-`/etc/omdrop/infra-iface` and `allow-untested`. omdrop finds the helper and
-`send-to-peer` on `PATH`.
+The module installs the helper and its polkit policy, keeps NetworkManager off OWL's interfaces and udev from changing `awdl0`'s MAC address, opens TCP 8771 on `awdl0`, and stops NixOS restarting wpa_supplicant (dropping Wi-Fi) whenever OWL adds or removes an interface. omdrop finds the helper and `send-to-peer` on `PATH`.
+
+The `interface` and `allowUntested` options set `/etc/omdrop/infra-iface` and `/etc/omdrop/allow-untested`.
 </details>
 
 ## Usage
