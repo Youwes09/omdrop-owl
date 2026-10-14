@@ -48,6 +48,13 @@ in
     networking.networkmanager.unmanaged = map (i: "interface-name:${i}") ifaces;
     networking.firewall.interfaces.awdl0.allowedTCPPorts = lib.mkIf cfg.openFirewall [ 8771 ];
 
+    # packaging/10-omdrop-owl-awdl0.link: udev must not give awdl0 a MAC
+    # address of its own, or omdrop announces a link-local awdl0 doesn't have.
+    systemd.network.links."10-omdrop-owl-awdl0" = {
+      matchConfig.OriginalName = "awdl0";
+      linkConfig.MACAddressPolicy = "none";
+    };
+
     # NixOS restarts wpa_supplicant whenever a Wi-Fi interface comes or goes,
     # which drops the connection each time OWL's monitor interface does.
     services.udev.packages = [
