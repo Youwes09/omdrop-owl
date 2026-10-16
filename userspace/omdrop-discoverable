@@ -538,6 +538,12 @@ supervise() {
       log "$MON is gone; the driver may have reloaded"
       exec "$SELF" stop radio-lost
     fi
+    # The hidden AP (ap_cell) is only up while hostapd is: without it nothing
+    # ACKs the phone, though OWL and mon0 carry on.
+    if [ -e "$RUN/hostapd.pid" ] && ! alive "$(pid_of hostapd)" hostapd; then
+      log "hostapd exited: $(tail -1 "$RUN/hostapd.log" 2>/dev/null)"
+      exec "$SELF" stop hostapd-exited
+    fi
     python3 "$LIB/awdl-airdrop-adv.py" --iface "$IF" --plain --flags "$ADV_FLAGS" --port 8771 \
       $burst >> "$RUN/announce.log" 2>&1
     sleep "$ADV_INTERVAL"

@@ -57,6 +57,10 @@ iw() {
 kill() { echo "kill $*" >> "$RUN/commands"; }
 if [[ "$HAS_HOSTAPD" == 1 ]]; then
   hostapd() { echo "hostapd $*" >> "$RUN/commands"; echo 4242 > "$RUN/hostapd.pid"; }
+else
+  # Absent even where hostapd is installed: the real daemon must never run.
+  command() { [[ "$*" == '-v hostapd' ]] && return 1; builtin command "$@"; }
+  hostapd() { echo "real hostapd run" >> "$RUN/commands"; return 1; }
 fi
 ''' + FUNCTIONS + STATION + '\n' + extra + '\ntouch "$RUN/commands"; cat "$RUN/commands"\n'
             result = subprocess.run(['bash', '-c', script], env=env, capture_output=True, text=True, timeout=10)
@@ -301,6 +305,7 @@ exclusive_down
         out = self.run_case('exclusive_up wlan0 phy0 5745 && exit 10\nexclusive_down',
                             ibss=False, hostapd=False)
         self.assertIn('no hostapd to stand in', out)
+        self.assertNotIn('real hostapd run', out)
         self.assertNotIn('type __ap', out)
         self.assertIn('nmcli device set wlan0 managed yes', out)
 
