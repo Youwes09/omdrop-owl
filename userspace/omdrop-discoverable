@@ -145,14 +145,24 @@ mt76_dir() { echo "/sys/kernel/debug/ieee80211/$(basename "$(readlink -f "/sys/c
 # unicast injected from it at 1 Mbit/s CCK whatever rate OWL asks for, so on
 # 44 none of the MT7922's reached the air (0 of 132, to an independent
 # capture), while on 6 115 of 121 did, and the phone ACKed 100.
-tx_channels() {  # PHY
+# The MT7612U (mt76x2u) is not held to that: its unicast gets through on 149,
+# where an iPhone on 5/6 GHz Wi-Fi gives a transfer most of its slots
+# (149,149,149,149,149,149,0,0,6,149,...). There a 3 MB photo arrived in about
+# 5 s, where on 6 a 1.1 MB one took 27 s and multi-photo transfers stalled.
+# 149 is the 5 GHz channel it was measured on, so it goes first.
+tx_channels() {  # PHY DRIVER
   local ok c f order
   ok=$(iw phy "$1" channels 2>/dev/null | awk '
     /^[[:space:]]*\* [0-9.]+ MHz/ { if (f && ok) print f; f = int($2); ok = !/disabled|[Nn]o IR|[Rr]adar/; next }
     /[Nn]o IR|[Rr]adar detection/ { ok = 0 }
     END { if (f && ok) print f }')
   order=$(cat "$CONF/channels" 2>/dev/null || echo 44 149 6)
-  [ "${PROF_MODE:-}" = active-monitor ] && order=6
+  if [ "${PROF_MODE:-}" = active-monitor ]; then
+    case "${2:-}" in
+      mt76x2u) order="149 44 6" ;;
+      *) order=6 ;;
+    esac
+  fi
   for c in $order; do
     case "$c" in 6) f=2437 ;; 44) f=5220 ;; 149) f=5745 ;; *) continue ;; esac
     grep -qx "$f" <<< "$ok" && echo "$f"
@@ -267,7 +277,11 @@ monitor_up() {  # STA PHY FREQ...
   iw phy "$phy" interface add "$MON" type monitor flags active || return 1
   ip link set "$MON" address "$(cat "/sys/class/net/$sta/address")" || return 1
   ip link set "$MON" up || return 1
+  # The station, as the passive monitor holding the channel context, is
+  # tuned too: with only mon0 set to 44, an MT7612U (kernel 6.12) heard
+  # nothing there and iw showed no channel for either interface.
   for f in "$@"; do
+    iw dev "$sta" set freq "$f" HT20 >&2 2>/dev/null
     iw dev "$MON" set freq "$f" HT20 >&2 && { echo "$f"; return 0; }
   done
   return 1
@@ -531,7 +545,7 @@ supervise() {
 }
 
 cmd_start() {
-  local secs=${1:-} sta drv phy gw ap freqs chan stamac monmac mt76 problem _
+  local secs=${1:-} sta drv phy gw ap freqs chan stamac monmac mt76 problem aggregation _
   local owl_extra=() strategy=intersect
   [[ "$secs" =~ ^[0-9]+$ ]] || die "usage: omdrop-discoverable start <seconds>" 2
   need_root
@@ -573,12 +587,12 @@ cmd_start() {
   echo "$drv $PROF_MODE $PROF_MONMAC $PROF_RECONNECT $PROF_PM" > "$RUN/profile"
   if [ "$PROF_MODE" != shared ]; then
     gw=none
-    freqs=$(tx_channels "$phy")
+    freqs=$(tx_channels "$phy" "$drv")
     [ -n "$freqs" ] || die "this Wi-Fi card may not transmit on any of AirDrop's channels (6, 44, 149) here" 4
     # From here a failure has to give Wi-Fi back, which is cmd_stop's job.
     if ! ap=$(exclusive_up "$sta" "$phy" $freqs); then
       cmd_stop start-failed >/dev/null
-      [ "$PROF_MODE" = active-monitor ] && die "could not set up the active monitor $MON on channel 6" 4
+      [ "$PROF_MODE" = active-monitor ] && die "could not set up the active monitor $MON on any of AirDrop's channels" 4
       die "could not start AWDL's cell ($IBSS or $AP) on any of AirDrop's channels" 4
     fi
   else
@@ -631,6 +645,16 @@ cmd_start() {
   if [ "$PROF_MODE" != shared ]; then
     owl_extra+=(-F -E)
     strategy=pin
+  fi
+  # owl -A (patches/owl-10-addba-accept.patch): accept the phone's Block Ack
+  # session request, so it sends A-MPDUs. Unanswered, an iPhone asked 61
+  # times in a 30 MB upload and sent all 21,941 frames singly. The MT7612U's
+  # active monitor answers each A-MPDU with a Block Ack itself, and the upload
+  # took 14 s instead of 47 s on 149; on by default there, as other cards
+  # haven't been measured. $CONF/aggregation 1 or 0 overrides.
+  aggregation=$(knob aggregation)
+  if [ "$aggregation" = 1 ] || { [ -z "$aggregation" ] && [ "$PROF_MODE" = active-monitor ] && [ "$drv" = mt76x2u ]; }; then
+    owl_extra+=(-A)
   fi
 
   # mt76_pm: runtime PM off for the window, restored by stop.
