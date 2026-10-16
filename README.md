@@ -108,7 +108,7 @@ Received files land in `~/Downloads`.
 | Realtek RTL8852AE | `rtw89_8852ae` | ✅ Shared (opt-in) | ThinkPad P14s Gen 2a, `10ec:8852`, Ubuntu 26.04.1 (kernel 7.0) |
 | Realtek RTL8852BE | `rtw89_8852be` | ✅ Shared (opt-in) | ASUS PRIME B550M-A WIFI II, `10ec:b852`, CachyOS (kernel 7.2.9) |
 | Realtek RTL8852CE | `rtw89_8852ce` | ✅ Shared (opt-in) | Legion Slim 5 16AHP9, `10ec:c852`, Omarchy 4.0.4 (kernel 7.2.5) |
-| Realtek RTL8852BU (USB) | `rtw89_8852bu` | ✅ Exclusive (opt-in), as a [second card](#a-second-card) | USB adapter, `35bc:0108`, NixOS 26.05 (kernel 7.2.9) |
+| Realtek RTL8852BU (USB) | `rtw89_8852bu` | ✅ Exclusive (opt-in), as a second card | USB adapter, `35bc:0108`, NixOS 26.05 (kernel 7.2.9) |
 | Intel 9560 | `iwlwifi` | ✅ Exclusive | Lenovo 81SY, `8086:a370`, Omarchy 4.0.0 (kernel 7.2.8) |
 | Intel AX200 | `iwlwifi` | ✅ Exclusive | ThinkPad X1 Yoga, `8086:2723`, NixOS 26.05 (kernel 6.19.8) |
 | Intel AX201 | `iwlwifi` | ✅ Exclusive | • Ubuntu 24.04 (kernel 6.8)<br>• CachyOS (kernel 7.2.9) |
@@ -158,19 +158,7 @@ Cards that can't inject while connected can try `mode exclusive`, which takes
 Wi-Fi away for the window, or `mode active-monitor` if the card has no ad-hoc
 mode (`iw phy` lists no IBSS) but supports an active monitor.
 
-### A second card
-
-A USB Wi-Fi adapter can run AirDrop in exclusive mode while the built-in card
-stays connected:
-
-```sh
-echo <adapter> | sudo tee /etc/omdrop/infra-iface
-nmcli device disconnect <adapter>
-```
-
-Exclusive mode tries channels 44, 149 and 6 in that order. If your phone
-doesn't come to the first one, set the order in `/etc/omdrop/channels`, e.g.
-`149 6`.
+A USB adapter can run exclusive mode as a second card while the built-in one stays connected: `echo <adapter> | sudo tee /etc/omdrop/infra-iface`, then `nmcli device disconnect <adapter>`. `/etc/omdrop/channels` sets the order exclusive mode tries channels in (default `44 149 6`).
 
 ## How it works
 
